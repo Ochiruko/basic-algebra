@@ -42,6 +42,8 @@ data Bound
   | PosInfinity
   deriving (Eq, Ord, Show)
 
+data Range = Range Bound Bound deriving Show
+
 -- | BoundSeq[0] to BoundSeq[1] is included in the Domain,
 -- BoundSeq[1] to BoundSeq[2] is not included in the Domain, etc.
 -- Note that BoundSeq should never have an unsorted state.
@@ -59,9 +61,27 @@ newtype FiniteDomain = Set Constant deriving (Eq, Ord, Show)
 
 data Domain = Domain BoundSeq FiniteDomain deriving (Eq, Ord, Show)
 
+bimap :: (BoundSeq -> BoundSeq) -> (FiniteDomain -> FiniteDomain) -> Domain -> Domain
+bimap f g (Domain bs fd) = Domain (f bs) (g fd)
+
+updateBoundSeq :: (BoundSeq -> BoundSeq) -> Domain -> Domain
+updateBoundSeq = flip bimap id
+
+updateFiniteDomain :: (FiniteDomain -> FiniteDomain) -> Domain -> Domain
+updateFiniteDomain = bimap id
+
+check2 :: (a -> b -> Bool) -> a -> b -> Maybe (a, b)
+check3 :: (a -> b -> c -> Bool) -> a -> b -> c -> Maybe (a, b, c)
+check2 x y = if pred x y then Just (x, y) else Nothing
+check3 x y z = if pred x y z then Just (x, y, z) else Nothing
+
 -- | returns Nothing when the top bound is greater than or equal to the bottom bound.
 addRange :: Bound -> Bound -> Domain -> Maybe Domain
-addRange = error "not implemented yet"
+addRange l r dom = check2 nonempty l r >>= (Just . clean . updateBoundSeq addRange' dom)
+  where 
+    addRange' bs l r = check3 containsRange bs l r >>=
+    insertRange = removeBetween . insertLeft . insertRight
+    clean = undefined
 
 -- | returns Nothing when the top bound is greater than or equal to the bottom bound.
 subtractRange :: Bound -> Bound -> Domain -> Maybe Domain
@@ -74,13 +94,15 @@ removeValue :: Constant -> Domain -> Domain
 removeValue = error "not implemented yet"
 
 -- | nonempty ensures that the domain is nonempty, and that the left bound
--- is less than or equal to than the right bound.
+-- is less than the right bound.
 nonempty :: Bound -> Bound -> Bool
 -- invalid infinite bounds
 nonempty _ NegInfinity = False
 nonempty PosInfinity _ = False
 -- empty range
 nonempty (Real Exclusive a) (Real Exclusive b) | a == b = False
+-- invalid inclusivity
+nonempty (Real e a) (Real f b) | a == b && e != f = False
 -- left bound is greater than right bound
 nonempty (Real _ a) (Real _ b) | a > b = False
 -- otherwise
